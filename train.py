@@ -38,7 +38,10 @@ def main():
 	args = parser.parse_args()
 	params = set_params(args.model_dir, args.network)
 		
-	dataloaders = fetch_dataloader(['train', 'val'], params)
+	dataloaders = fetch_dataloader(['train', 'val'], params) 
+
+	# Set the logger
+	utils.set_logger(os.path.join(json_path, 'train.log'), args.log)
 	
 
 if __name__ == '__main__':
