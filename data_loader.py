@@ -1,9 +1,10 @@
 import os
 
 import numpy as np
-import panda as pd
+import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from torch import Tensor
+from itertools import chain
 
 class CancerDatasetWrapper:
 	class __CancerDatasetWrapper:
@@ -15,28 +16,29 @@ class CancerDatasetWrapper:
 			create df for features and labels
 			remove samples that are not shared between the two tables
 			"""
-			self.features = pd.read_csv("TCGA-BRCA.methylation450.tsv",delimiter='\t',encoding='utf-8') 
-			self.feautres = self.features.dropna().reset_index(drop=True)
-			self.feautres = self.feautres.drop([list(self.feautres.columns.values)[0]], axis=1)
-
 			self.labels = pd.read_csv("TCGA-BRCA.survival.tsv",delimiter='\t',encoding='utf-8') 
 			#filter LumA donors
 			donor = pd.read_csv("TCGA_PAM50.txt",delimiter='\t',encoding='utf-8') 
 			donor = donor[donor['PAM50_genefu'] == 'LumA']
 			donor = donor['submitted_donor_id']
-			self.labels = self.labels[self.labels['_PATIENT'].isin(donor)]
 
+			self.labels = self.labels[self.labels['_PATIENT'].isin(donor)]
 			label_sample_list = list(self.labels['sample'])
+
+			self.features = pd.read_csv("TCGA-BRCA.methylation450.tsv",delimiter='\t',encoding='utf-8') 
+			self.feautres = self.features.dropna().reset_index(drop=True)
+			self.feautres = self.feautres.drop([list(self.feautres.columns.values)[0]], axis=1)
+
 			feature_sample_list = list(self.feautres.columns.values)[1:]
 			samples = list(set(label_sample_list) & set(feature_sample_list))
 			
 			#only keep LumA samples to limit the memory usage
 			self.feautres = self.feautres[samples]
-			self.labels = self.labels[self.labels['sample'].isin(samples])
+			self.labels = self.labels[self.labels['sample'].isin(samples)]
 
 			self.shuffle()
 
-		def label(self.key):
+		def label(self, key):
 			"""
 			Args: 
 				key:(string) the sample key	
@@ -49,14 +51,20 @@ class CancerDatasetWrapper:
 			"""
 			categorize sample ID by label
 			"""
+			#keys to feature where label is 1
+			self.ones = list(self.labels[self.labels['OS']==1]['sample'])
+			index = np.arange(len(self.ones))
+			np.random.shuffle(index)
+			self.ones = [self.ones[index[i]] for i in range(index.shape[0])]
+			self.ones = [self.ones[int(len(self.ones)/10)*i: int(len(self.ones)/10)*(i+1)] for i in range(10)]
 
 			#keys to feature where label is 0
-			self.zeros = np.random.shuffle(np.array(list(self.labels[self.labels['OS']==0]['sample'])))
-			self.zeros = np.reshape(self.zeros, (10,-1))
+			self.zeros = list(self.labels[self.labels['OS']==0]['sample'])
+			index = np.arange(len(self.zeros))
+			np.random.shuffle(np.arange(len(self.zeros)))
+			self.zeros = [self.zeros[index[i]] for i in range(index.shape[0])]
+			self.zeros = [self.zeros[int(len(self.zeros)/10)*i: int(len(self.zeros)/10)*(i+1)] for i in range(10)]
 
-			#keys to feature where label is 1
-			self.ones = np.random.shuffle(np.array(list(self.labels[self.labels['OS']==1]['sample'])))
-			self.ones = np.reshape(self.ones, (10,-1))
 			#index of valication set
 			self.CVindex = 0
 
@@ -109,11 +117,13 @@ class CancerDatasetWrapper:
 		Returns:
 			dataset: (np.ndarray) array of key/id of trainning set
 		"""
-		ind = np.ones((10,), bool)
-		ind[CancerDatasetWrapper.instance.CVindex] = False
+		ind = np.ones((10,), int)
+		ind = np.delete(ind, CancerDatasetWrapper.instance.CVindex)
 
-		trainSet = np.concatenate(CancerDatasetWrapper.instance.zeros[ind,:],CancerDatasetWrapper.instance.ones[ind,:])
-		trainSet = np.random.shuffle(trainSet.flatten)
+		trainSet = list(chain(*[CancerDatasetWrapper.instance.zeros[i] for i in ind]))+list(chain(*[CancerDatasetWrapper.instance.ones[i] for i in ind]))
+		index = np.arange(len(trainSet))
+		np.random.shuffle(index)
+		trainSet = [trainSet[index[i]] for i in range(len(index))]
 		return trainSet
 	
 	def __valSet(self):
@@ -122,9 +132,10 @@ class CancerDatasetWrapper:
 			dataset: (np.ndarray) array of key/id of validation set
 		"""
 
-		valSet = np.concatenate(CancerDatasetWrapper.instance.zeros[CancerDatasetWrapper.instance.CVindex], 		
-				CancerDatasetWrapper.instance.ones[CancerDatasetWrapper.instance.CVindex])
-		valSet = np.random.shuffle(valSet.flatten)
+		valSet = CancerDatasetWrapper.instance.zeros[CancerDatasetWrapper.instance.CVindex] + CancerDatasetWrapper.instance.ones[CancerDatasetWrapper.instance.CVindex]
+		index = np.arange(len(valSet))
+		np.random.shuffle(index)
+		valSet = [valSet[index[i]] for i in range(len(index))]
 		return valSet
 
 	def getDataSet(self, dataSetType = 'train'):
@@ -134,7 +145,7 @@ class CancerDatasetWrapper:
 		Returns:
 			dataset: (np.ndarray) array of key/id of data set
 		"""
-		if dataSetType = 'val':
+		if dataSetType == 'val':
 			return self.__valSet()
 		return self.__trainSet()
 
@@ -198,3 +209,5 @@ def fetch_dataloader(types, params):
             dataloaders[split] = dl
 
     return dataloaders
+
+	
