@@ -13,18 +13,28 @@ print(len(donor))
 
 labels = labels[labels['_PATIENT'].isin(donor)]
 
+features = pd.read_csv("TCGA-BRCA.methylation450.tsv",delimiter='\t',encoding='utf-8') 
+feautres = features.dropna().reset_index(drop=True)
+print(list(feautres.columns.values))
+feautres = feautres.drop([list(feautres.columns.values)[0]], axis=1)
+print(list(feautres.columns.values))
+
+feature_sample_list = list(feautres.columns.values)
+
 ones = list(labels[labels['OS']==1]['sample'])
-index = np.arange(len(ones))
+'''index = np.arange(len(ones))
 np.random.shuffle(index)
 ones = [ones[index[i]] for i in range(index.shape[0])]
-ones = [ones[int(len(ones)/10)*i: int(len(ones)/10)*(i+1)] for i in range(10)]
+ones = [ones[int(len(ones)/10)*i: int(len(ones)/10)*(i+1)] for i in range(10)]'''
 
 zeros = list(labels[labels['OS']==0]['sample'])
+'''
 index = np.arange(len(zeros))
 np.random.shuffle(np.arange(len(zeros)))
 zeros = [zeros[index[i]] for i in range(index.shape[0])]
-zeros = [zeros[int(len(zeros)/10)*i: int(len(zeros)/10)*(i+1)] for i in range(10)]
-
+zeros = [zeros[int(len(zeros)/10)*i: int(len(zeros)/10)*(i+1)] for i in range(10)]'''
+print(len(ones),len(zeros))
+'''
 ind = np.arange(10)
 ind = np.delete(ind, 3)
 print(ind)
@@ -40,4 +50,4 @@ valSet = zeros[3] + ones[3]
 index = np.arange(len(valSet))
 np.random.shuffle(index)
 valSet = [valSet[index[i]] for i in range(len(index))]
-print(valSet)
+print(valSet)'''

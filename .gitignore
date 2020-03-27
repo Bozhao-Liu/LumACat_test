@@ -2,3 +2,6 @@
 *.txt
 *.tsv
 *.bed
+*.pyc
+*.pyc
+__pychage__

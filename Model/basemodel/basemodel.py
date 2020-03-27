@@ -1,7 +1,5 @@
-import torch.sigmoid as sigmoid
 import torch.nn as nn
 
-import model.functions
 
 class Base_Model(nn.Module):
 	def __init__(self, channels):
@@ -25,7 +23,7 @@ class Base_Model(nn.Module):
 		Note: the dimensions after each step are provided
 		"""
 		x = self.fc(x)
-		x = sigmoid(x)
+		x = nn.sigmoid(x)
 
 		return x
 

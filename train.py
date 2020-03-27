@@ -1,11 +1,12 @@
 import os
-import utils
 import argparse
 from tqdm import tqdm
-
 import torch
+import gc
 
-from data_loader import fetch_dataloader
+from Evaluation_Matix import *
+from utils import *
+from data_loader import fetch_dataloader, get_next_CV_set
 
 parser = argparse.ArgumentParser(description='PyTorch Deep Neural Net Training')
 parser.add_argument('--train', default=False,  type=bool, 
@@ -16,55 +17,25 @@ parser.add_argument('--resume', default=True, type=bool,
 			help='path to latest checkpoint (default: True)')
 parser.add_argument('--network', type=str, default='basemodel', 
 			help='select network to train on.')
-parser.add_argument('--print-freq', '-p', default=50, type=int, metavar='N', 
-			help='print frequency (default: 50)')
 parser.add_argument('--log', default='warning', type=str,
 			help='set logging level')
 
-def set_params(model_dir, network):
-	params = utils.Params(model_dir, network)
-
-	# use GPU if available
-	params.cuda = torch.cuda.is_available()
-
-	# Set the random seed for reproducible experiments
-	torch.manual_seed(230)
-	if params.cuda: 
-		torch.cuda.manual_seed(230)
-
-	return params
-
-def resume_checkpoint(model_dir, network, start_epoch, best_loss, model, optimizer, CViter):
-	checkpointfile = os.path.join(model_dir, network+ str(CViter) + '.pth.tar')
-	if os.path.isfile(checkpointfile):
-		#logging.warning("=> loaded checkpoint '{}' (epoch {})".format(checkpointfile, checkpoint['epoch']))
-		logging.info("Loading checkpoint {}".format(checkpointfile))
-		checkpoint = torch.load(checkpointfile)
-		start_epoch = checkpoint['epoch']
-		best_loss = checkpoint['best_loss']
-		model.load_state_dict(checkpoint['state_dict'])
-		optimizer.load_state_dict(checkpoint['optimizer'])
-		return start_epoch, best_loss, model, optimizer
-	else:
-		logging.warning("=> no checkpoint found at '{}'".format(checkpointfile))
-		return 0, +inf, model, optimizer
 
 def train_model(args, params, loss_fn, model, optimizer, CViter):
 	if args.resume:
 		start_epoch, best_loss, model, optimizer = resume_checkpoint(args.model_dir, args.network, model, optimizer, CViter)
+
 	dataloaders = fetch_dataloader(['train', 'val'], params) 
 
-	train_loader = dataloaders['train']
-	val_loader = dataloaders['val']
 	for epoch in range(params.start_epoch, params.start_epoch + params.epochs):
 		logging.info("Epoch {}:".format(epoch))
-		train(train_loader, model, loss_fn, optimizer)
+		train(dataloaders['train'], model, loss_fn, optimizer)
 
 		# evaluate on validation set
-		val_loss = validate(val_loader, model, loss_fn)
+		val_loss = validate(dataloaders['val'], model, loss_fn)
 
-		# remember best F1 and save checkpoint
-		is_best = val_loss > (2*(best_F1[0]*best_F1[1])/(best_F1[0]+best_F1[1]))
+		# remember best loss and save checkpoint
+		is_best = val_loss > best_loss
 		best_loss = max(val_loss, best_loss)
 		save_checkpoint({
 			'epoch': epoch + 1,
@@ -73,13 +44,99 @@ def train_model(args, params, loss_fn, model, optimizer, CViter):
 			'optimizer' : optimizer.state_dict(),
 			}, is_best, args.model_dir, args.network, CViter)
 		if is_best:
-			save_to_ini(params, args.model_dir, args.network, version, val_result, threshold = args.threshold)
-    	validate(val_loader, model, loss, threshold = args.threshold)
+			save_AUC(params, args.model_dir, args.network, CViter, output.data, label)
+
 	get_next_CV_set()
 
-def get_next_CV_set():
-	DatasetWrapper = CancerDatasetWrapper()
-	DatasetWrapper.next()
+def train(train_loader, model, loss, optimizer, epoch, threshold = 0.5):
+	logging.info("Epoch {}:".format(epoch))
+	batch_time = AverageMeter()
+	data_time = AverageMeter()
+	losses = AverageMeter()
+
+	# switch to train mode
+	model.train()
+
+	end = time.time()
+	with tqdm(total=len(train_loader)) as t:
+		for i, (datas, label, _) in enumerate(train_loader):
+			# measure data loading time
+			logging.info("    Sample {}:".format(i))
+			data_time.update(time.time() - end)
+
+			logging.info("        Loading Varable")
+			input_var = torch.autograd.Variable(datas.cuda())
+			label_var = torch.autograd.Variable(label.cuda()).double()
+
+			# compute output
+			logging.info("        Compute output")
+			output = model(input_var).double()
+
+
+			# measure accuracy and record cost
+			cost = loss(output, label_var, (1, 1))
+			losses.update(cost.data, len(datas))
+
+			# compute gradient and do SGD step
+			logging.info("        Compute gradient and do SGD step")
+			optimizer.zero_grad()
+			cost.backward()
+			optimizer.step()
+
+			# measure elapsed time
+			logging.info("        Measure elapsed time")
+			batch_time.update(time.time() - end)
+			end = time.time()
+
+
+			gc.collect()
+			t.set_postfix(loss='{:05.3f}'.format(losses()))
+			t.update()
+
+		logging.warning('Epoch: [{0}][{1}/{2}]\n'
+				'    Time {batch_time.val:.3f} ({batch_time.avg:.3f})\n'
+				'    Data {data_time.val:.3f} ({data_time.avg:.3f})\n'
+				'    Loss {loss.val:.4f} ({loss.avg:.4f})\n'.format(
+				epoch, i, len(train_loader), batch_time=batch_time,
+				data_time=data_time, loss=losses))
+
+def validate(val_loader, model, loss, threshold = 0.5):
+	logging.info("Validating")
+	logging.info("Initializing measurement")
+	batch_time = AverageMeter()
+	losses = AverageMeter()
+
+	# switch to evaluate mode
+	model.eval()
+
+	end = time.time()
+	for i, (datas, label, _) in enumerate(val_loader):
+		logging.info("    Sample {}:".format(i))
+		logging.info("        Loading Varable")
+		input_var = torch.autograd.Variable(datas.cuda())
+		label_var = torch.autograd.Variable(label.cuda()).double()
+
+		# compute output
+		logging.info("        Compute output")
+		output = model(input_var).double()
+		cost = loss(output, label_var, (1, 1))
+
+		# measure record cost
+		losses.update(cost.data, len(datas))
+
+		# measure elapsed time
+		logging.info("        Measure elapsed time")
+		batch_time.update(time.time() - end)
+		end = time.time()
+
+	logging.warning('Test: [{0}/{1}]\n'
+			'    Time {batch_time.val:.3f} ({batch_time.avg:.3f})\n'
+			'    Loss {loss.val:.4f} ({loss.avg:.4f})\n'.format(
+			i, len(val_loader), batch_time=batch_time, loss=losses))
+
+
+	return losses.sum
+
 
 def main():
 	args = parser.parse_args()
@@ -87,15 +144,16 @@ def main():
 	params = set_params(args.model_dir, args.network)
 
 	# Set the logger
-	utils.set_logger(os.path.join(json_path, 'train.log'), args.log)
+	set_logger(args.model_dir, args.network, args.log)
 	
 	# create model
 	logging.warning("Loading Model")
+	import model_loader
 	model = model_loader.loadModel(args.network)
 	model.cuda()
 
 	# define loss function and optimizer
-	loss_fn = model_loader.UnevenWeightBCE_loss
+	loss_fn = UnevenWeightBCE_loss
 	optimizer = torch.optim.Adam(model.parameters(), params.learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=params.weight_decay, amsgrad=False)
 	cudnn.benchmark = True
 
@@ -113,12 +171,6 @@ def main():
 
 		validate(fetch_dataloader([], params) , best_model, loss_fn) #validate model on the full dataset
 
-def save_checkpoint(state, is_best, model_dir, network, CViter):
-	checkpointfile = os.path.join(model_dir, network+ str(CViter) + '.pth.tar')
-	torch.save(state, filename)
-	if is_best:
-		checkpointfile = os.path.join(model_dir, network+ str(CViter) + '_model_best.pth.tar')	
-		torch.save(state, filename)
 		
 
 if __name__ == '__main__':

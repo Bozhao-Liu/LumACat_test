@@ -29,7 +29,7 @@ class CancerDatasetWrapper:
 			self.feautres = self.features.dropna().reset_index(drop=True)
 			self.feautres = self.feautres.drop([list(self.feautres.columns.values)[0]], axis=1)
 
-			feature_sample_list = list(self.feautres.columns.values)[1:]
+			feature_sample_list = list(self.feautres.columns.values)
 			samples = list(set(label_sample_list) & set(feature_sample_list))
 			
 			#only keep LumA samples to limit the memory usage
@@ -225,4 +225,6 @@ def fetch_dataloader(types, params):
 
 	return dataloaders
 
-	
+def get_next_CV_set():
+	DatasetWrapper = CancerDatasetWrapper()
+	DatasetWrapper.next()
