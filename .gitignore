@@ -2,3 +2,9 @@
 *.txt
 *.tsv
 *.bed
+*.pyc
+*.log
+*.tar
+__pychage__
+
+

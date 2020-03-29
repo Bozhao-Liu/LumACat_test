@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import shutil
+import torch
 try:
     from torch.hub import load_state_dict_from_url
 except ImportError:
@@ -25,8 +26,9 @@ class Params():
 
     def __init__(self, model_dir, network):
         json_path = os.path.join(model_dir, network)
-        assert os.path.exists(json_path), "Can not find Path {}".format(json_path)
         json_file = os.path.join(json_path, 'params.json')
+        logging.info("Loading json file {}".format(json_file))
+        assert os.path.isfile(json_file), "Can not find File {}".format(json_file)
         with open(json_file) as f:
             params = json.load(f)
 
@@ -46,29 +48,6 @@ class Params():
     def dict(self):
         """Gives dict-like access to Params instance by `params.dict['learning_rate']"""
         return self.__dict__
-
-
-class RunningAverage():
-    """A simple class that maintains the running average of a quantity
-    
-    Example:
-    ```
-    loss_avg = RunningAverage()
-    loss_avg.update(2)
-    loss_avg.update(4)
-    loss_avg() = 3
-    ```
-    """
-    def __init__(self):
-        self.steps = 0
-        self.total = 0
-    
-    def update(self, val):
-        self.total += val
-        self.steps += 1
-    
-    def __call__(self):
-        return self.total/float(self.steps)
         
     
 def set_logger(model_dir, network, level = 'info'):
@@ -86,7 +65,9 @@ def set_logger(model_dir, network, level = 'info'):
         log_path: (string) where to log
     """
     log_path = os.path.join(model_dir, network)
+    assert os.path.isdir(log_path), "Can not find Path {}".format(log_path)
     log_path = os.path.join(log_path, 'train.log')
+    print('Saving {} log to {}'.format(level, log_path))
     level = level.lower()
     logger = logging.getLogger()
     if level == 'warning':
@@ -112,6 +93,18 @@ def set_logger(model_dir, network, level = 'info'):
         stream_handler.setFormatter(logging.Formatter('%(message)s'))
         logger.addHandler(stream_handler)
 
+def set_params(model_dir, network):
+	params = Params(model_dir, network)
+
+	# use GPU if available
+	params.cuda = torch.cuda.is_available()
+
+	# Set the random seed for reproducible experiments
+	torch.manual_seed(230)
+	if params.cuda: 
+		torch.cuda.manual_seed(230)
+
+	return params
 
 def save_dict_to_json(d, json_path):
     """Saves dict of floats in json file
@@ -126,41 +119,31 @@ def save_dict_to_json(d, json_path):
         json.dump(d, f, indent=4)
 
 
-def save_checkpoint(state, is_best, checkpoint):
-    """Saves model and training parameters at checkpoint + 'last.pth.tar'. If is_best==True, also saves
-    checkpoint + 'best.pth.tar'
-
-    Args:
-        state: (dict) contains model's state_dict, may contain other keys such as epoch, optimizer state_dict
-        is_best: (bool) True if it is the best model seen till now
-        checkpoint: (string) folder where parameters are to be saved
-    """
-    filepath = os.path.join(checkpoint, 'last.pth.tar')
-    if not os.path.exists(checkpoint):
-        print("Checkpoint Directory does not exist! Making directory {}".format(checkpoint))
-        os.mkdir(checkpoint)
-    else:
-        print("Checkpoint Directory exists! ")
-    torch.save(state, filepath)
-    if is_best:
-        shutil.copyfile(filepath, os.path.join(checkpoint, 'best.pth.tar'))
+def save_checkpoint(state, is_best, args, CViter):
+	checkpointfile = os.path.join(args.model_dir, args.network)
+	checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
+	checkpointfile = os.path.join(checkpointfile, network+ str(CViter) + '.pth.tar')
+	torch.save(state, checkpointfile)
+	if is_best:
+		checkpointfile = os.path.join(args.model_dir, args.network)
+		checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
+		checkpointfile = os.path.join(checkpointfile, network+ str(CViter) + '_model_best.pth.tar')	
+		torch.save(state, checkpointfile)
 
 
-def load_checkpoint(checkpoint, model, optimizer=None):
-    """Loads model parameters (state_dict) from file_path. If optimizer is provided, loads state_dict of
-    optimizer assuming it is present in checkpoint.
-
-    Args:
-        checkpoint: (string) filename which needs to be loaded
-        model: (torch.nn.Module) model for which the parameters are loaded
-        optimizer: (torch.optim) optional: resume optimizer from checkpoint
-    """
-    if not os.path.exists(checkpoint):
-        raise("File doesn't exist {}".format(checkpoint))
-    checkpoint = torch.load(checkpoint)
-    model.load_state_dict(checkpoint['state_dict'])
-
-    if optimizer:
-        optimizer.load_state_dict(checkpoint['optim_dict'])
-
-    return checkpoint
+def resume_checkpoint(args, model, optimizer, CViter):
+	checkpointfile = os.path.join(args.model_dir, args.network)
+	checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
+	checkpointfile = os.path.join(checkpointfile, network+ str(CViter) + '.pth.tar')
+	if os.path.isfile(checkpointfile):
+		#logging.warning("=> loaded checkpoint '{}' (epoch {})".format(checkpointfile, checkpoint['epoch']))
+		logging.info("Loading checkpoint {}".format(checkpointfile))
+		checkpoint = torch.load(checkpointfile)
+		start_epoch = checkpoint['epoch']
+		best_loss = checkpoint['best_loss']
+		model.load_state_dict(checkpoint['state_dict'])
+		optimizer.load_state_dict(checkpoint['optimizer'])
+		return start_epoch, best_loss, model, optimizer
+	else:
+		logging.warning("=> no checkpoint found at '{}'".format(checkpointfile))
+		return 0, float('Inf'), model, optimizer

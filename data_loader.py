@@ -26,14 +26,14 @@ class CancerDatasetWrapper:
 			label_sample_list = list(self.labels['sample'])
 
 			self.features = pd.read_csv("TCGA-BRCA.methylation450.tsv",delimiter='\t',encoding='utf-8') 
-			self.feautres = self.features.dropna().reset_index(drop=True)
-			self.feautres = self.feautres.drop([list(self.feautres.columns.values)[0]], axis=1)
+			self.features = self.features.dropna().reset_index(drop=True)
+			self.features = self.features.drop([list(self.features.columns.values)[0]], axis=1)
 
-			feature_sample_list = list(self.feautres.columns.values)[1:]
+			feature_sample_list = list(self.features.columns.values)
 			samples = list(set(label_sample_list) & set(feature_sample_list))
 			
 			#only keep LumA samples to limit the memory usage
-			self.feautres = self.feautres[samples]
+			self.features = self.features[samples]
 			self.labels = self.labels[self.labels['sample'].isin(samples)]
 
 			self.shuffle()
@@ -95,7 +95,7 @@ class CancerDatasetWrapper:
 		Returns:
 			features in list	
 		"""
-		return CancerDatasetWrapper.instance.features[key]
+		return np.array(list(CancerDatasetWrapper.instance.features[key]))
 
 	def label(self, key):
 		"""
@@ -104,7 +104,7 @@ class CancerDatasetWrapper:
 		Returns:
 			label to the life and death of patient
 		"""
-		return CancerDatasetWrapper.instance.label(key)
+		return np.array(list(CancerDatasetWrapper.instance.label(key)))
 
 	def next(self):
 		CancerDatasetWrapper.instance.next()
@@ -117,13 +117,12 @@ class CancerDatasetWrapper:
 		Returns:
 			dataset: (np.ndarray) array of key/id of trainning set
 		"""
+
 		ind = np.ones((10,), int)
 		ind = np.delete(ind, CancerDatasetWrapper.instance.CVindex)
 
 		trainSet = list(chain(*[CancerDatasetWrapper.instance.zeros[i] for i in ind]))+list(chain(*[CancerDatasetWrapper.instance.ones[i] for i in ind]))
-		index = np.arange(len(trainSet))
-		np.random.shuffle(index)
-		trainSet = [trainSet[index[i]] for i in range(len(index))]
+
 		return trainSet
 	
 	def __valSet(self):
@@ -133,10 +132,18 @@ class CancerDatasetWrapper:
 		"""
 
 		valSet = CancerDatasetWrapper.instance.zeros[CancerDatasetWrapper.instance.CVindex] + CancerDatasetWrapper.instance.ones[CancerDatasetWrapper.instance.CVindex]
-		index = np.arange(len(valSet))
-		np.random.shuffle(index)
-		valSet = [valSet[index[i]] for i in range(len(index))]
+
 		return valSet
+
+	def __fullSet(self):
+		"""
+		Returns:
+			dataset: (np.ndarray) array of key/id of full dataset
+		"""
+
+		fullset = list(chain(*CancerDatasetWrapper.instance.zeros))+list(chain(*CancerDatasetWrapper.instance.ones))
+
+		return fullset
 
 	def getDataSet(self, dataSetType = 'train'):
 		"""
@@ -145,9 +152,15 @@ class CancerDatasetWrapper:
 		Returns:
 			dataset: (np.ndarray) array of key/id of data set
 		"""
+
+		if dataSetType == 'train':
+			return self.__trainSet()
+
 		if dataSetType == 'val':
 			return self.__valSet()
-		return self.__trainSet()
+
+		return self.__fullSet()
+		
 
 
 class CancerDataset(Dataset):
@@ -179,35 +192,39 @@ class CancerDataset(Dataset):
 		    label: (int) corresponding label of sample
 		"""
 		sample = self.samples[idx]
-		return Tensor(self.DatasetWrapper.feature(sample)), self.DatasetWrapper.label(sample)
+		return Tensor(self.DatasetWrapper.features(sample)), self.DatasetWrapper.label(sample)
 
 
 def fetch_dataloader(types, params):
-    """
-    Fetches the DataLoader object for each type in types.
+	"""
+	Fetches the DataLoader object for each type in types.
 
-    Args:
-        types: (list) has one or more of 'train', 'val'depending on which data is required
-        params: (Params) hyperparameters
+	Args:
+	types: (list) has one or more of 'train', 'val'depending on which data is required '' to get the full dataSet
+	params: (Params) hyperparameters
 
-    Returns:
-        data: (dict) contains the DataLoader object for each type in types
-    """
-    dataloaders = {}
-
-    for split in types:
-        if split in ['train', 'val']:
-            if split == 'train':
-                dl = DataLoader(CancerDataset(split), batch_size=params.batch_size, shuffle=True,
-                                        num_workers=params.num_workers,
-                                        pin_memory=params.cuda)
-            else:
-                dl = DataLoader(CancerDataset(split), batch_size=params.batch_size, shuffle=False,
-                                num_workers=params.num_workers,
-                                pin_memory=params.cuda)
-
-            dataloaders[split] = dl
-
-    return dataloaders
-
+	Returns:
+	data: (dict) contains the DataLoader object for each type in types
+	"""
+	dataloaders = {}
 	
+	if len(types)>0:
+		for split in types:
+			if split in ['train', 'val']:
+				dl = DataLoader(CancerDataset(split), batch_size=params.batch_size, shuffle=True,
+					num_workers=params.num_workers,
+					pin_memory=params.cuda)
+
+				dataloaders[split] = dl
+	else:
+		dl = DataLoader(CancerDataset(''), batch_size=params.batch_size, shuffle=True,
+			num_workers=params.num_workers,
+			pin_memory=params.cuda)
+
+		return dl
+
+	return dataloaders
+
+def get_next_CV_set():
+	DatasetWrapper = CancerDatasetWrapper()
+	DatasetWrapper.next()
