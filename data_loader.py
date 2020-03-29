@@ -11,11 +11,13 @@ class CancerDatasetWrapper:
 		"""
 		A standard PyTorch definition of Dataset which defines the functions __len__ and __getitem__.
 		"""
-		def __init__(self):
+		def __init__(self, cv_iters):
 			"""
 			create df for features and labels
 			remove samples that are not shared between the two tables
 			"""
+
+			self.cv_iters = cv_iters
 			self.labels = pd.read_csv("TCGA-BRCA.survival.tsv",delimiter='\t',encoding='utf-8') 
 			#filter LumA donors
 			donor = pd.read_csv("TCGA_PAM50.txt",delimiter='\t',encoding='utf-8') 
@@ -56,14 +58,14 @@ class CancerDatasetWrapper:
 			index = np.arange(len(self.ones))
 			np.random.shuffle(index)
 			self.ones = [self.ones[index[i]] for i in range(index.shape[0])]
-			self.ones = [self.ones[int(len(self.ones)/10)*i: int(len(self.ones)/10)*(i+1)] for i in range(10)]
+			self.ones = [self.ones[int(len(self.ones)/self.cv_iters)*i: int(len(self.ones)/self.cv_iters)*(i+1)] for i in range(self.cv_iters)]
 
 			#keys to feature where label is 0
 			self.zeros = list(self.labels[self.labels['OS']==0]['sample'])
 			index = np.arange(len(self.zeros))
 			np.random.shuffle(np.arange(len(self.zeros)))
 			self.zeros = [self.zeros[index[i]] for i in range(index.shape[0])]
-			self.zeros = [self.zeros[int(len(self.zeros)/10)*i: int(len(self.zeros)/10)*(i+1)] for i in range(10)]
+			self.zeros = [self.zeros[int(len(self.zeros)/self.cv_iters)*i: int(len(self.zeros)/self.cv_iters)*(i+1)] for i in range(self.cv_iters)]
 
 			#index of valication set
 			self.CVindex = 0
@@ -72,16 +74,16 @@ class CancerDatasetWrapper:
 			'''
 			rotate to the next cross validation process
 			'''
-			if self.CVindex < 9:
+			if self.CVindex < self.cv_iters-1:
 				self.CVindex += 1
 			else:
 				self.CVindex = 0
 
 
 	instance = None
-	def __init__(self, shuffle = 0):
+	def __init__(self, cv_iters, shuffle = 0):
 		if not CancerDatasetWrapper.instance:
-			CancerDatasetWrapper.instance = CancerDatasetWrapper.__CancerDatasetWrapper()
+			CancerDatasetWrapper.instance = CancerDatasetWrapper.__CancerDatasetWrapper(cv_iters)
 		elif shuffle:
 			CancerDatasetWrapper.instance.shuffle()
 
@@ -118,7 +120,7 @@ class CancerDatasetWrapper:
 			dataset: (np.ndarray) array of key/id of trainning set
 		"""
 
-		ind = np.ones((10,), int)
+		ind = list(range(CancerDatasetWrapper.instance.cv_iters))
 		ind = np.delete(ind, CancerDatasetWrapper.instance.CVindex)
 
 		trainSet = list(chain(*[CancerDatasetWrapper.instance.zeros[i] for i in ind]))+list(chain(*[CancerDatasetWrapper.instance.ones[i] for i in ind]))
@@ -167,13 +169,13 @@ class CancerDataset(Dataset):
 	"""
 	A standard PyTorch definition of Dataset which defines the functions __len__ and __getitem__.
 	"""
-	def __init__(self, dataSetType):
+	def __init__(self, dataSetType, CV_iters):
 		"""
 		initialize DatasetWrapper
 		"""
-		self.DatasetWrapper = CancerDatasetWrapper()
+		self.DatasetWrapper = CancerDatasetWrapper(CV_iters)
 
-		self.samples = self.DatasetWrapper.getDataSet(dataSetType)	
+		self.samples = self.DatasetWrapper.getDataSet(dataSetType)
 
 	def __len__(self):
 		# return size of dataset
@@ -211,13 +213,13 @@ def fetch_dataloader(types, params):
 	if len(types)>0:
 		for split in types:
 			if split in ['train', 'val']:
-				dl = DataLoader(CancerDataset(split), batch_size=params.batch_size, shuffle=True,
+				dl = DataLoader(CancerDataset(split, params.CV_iters), batch_size=params.batch_size, shuffle=True,
 					num_workers=params.num_workers,
 					pin_memory=params.cuda)
 
 				dataloaders[split] = dl
 	else:
-		dl = DataLoader(CancerDataset(''), batch_size=params.batch_size, shuffle=True,
+		dl = DataLoader(CancerDataset('',params.CV_iters), batch_size=params.batch_size, shuffle=True,
 			num_workers=params.num_workers,
 			pin_memory=params.cuda)
 
@@ -225,6 +227,6 @@ def fetch_dataloader(types, params):
 
 	return dataloaders
 
-def get_next_CV_set():
-	DatasetWrapper = CancerDatasetWrapper()
+def get_next_CV_set(CV_iters):
+	DatasetWrapper = CancerDatasetWrapper(CV_iters)
 	DatasetWrapper.next()
