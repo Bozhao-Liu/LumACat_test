@@ -3,8 +3,6 @@
     "batch_size": 32,
     "epochs": 10,
     "dropout_rate":0.8, 
-    "num_channels": 32,
-    "num_input_channels": 2,
     "num_workers": 4,
     "weight_decay": 5e-4
 }
