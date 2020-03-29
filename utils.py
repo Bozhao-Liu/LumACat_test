@@ -26,8 +26,9 @@ class Params():
 
     def __init__(self, model_dir, network):
         json_path = os.path.join(model_dir, network)
-        assert os.path.exists(json_path), "Can not find Path {}".format(json_path)
         json_file = os.path.join(json_path, 'params.json')
+        logging.info("Loading json file {}".format(json_file))
+        assert os.path.isfile(json_file), "Can not find File {}".format(json_file)
         with open(json_file) as f:
             params = json.load(f)
 
@@ -64,7 +65,9 @@ def set_logger(model_dir, network, level = 'info'):
         log_path: (string) where to log
     """
     log_path = os.path.join(model_dir, network)
+    assert os.path.isdir(log_path), "Can not find Path {}".format(log_path)
     log_path = os.path.join(log_path, 'train.log')
+    print('Saving {} log to {}'.format(level, log_path))
     level = level.lower()
     logger = logging.getLogger()
     if level == 'warning':
@@ -116,16 +119,22 @@ def save_dict_to_json(d, json_path):
         json.dump(d, f, indent=4)
 
 
-def save_checkpoint(state, is_best, model_dir, network, CViter):
-	checkpointfile = os.path.join(model_dir, network+ str(CViter) + '.pth.tar')
-	torch.save(state, filename)
+def save_checkpoint(state, is_best, args, CViter):
+	checkpointfile = os.path.join(args.model_dir, args.network)
+	checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
+	checkpointfile = os.path.join(checkpointfile, network+ str(CViter) + '.pth.tar')
+	torch.save(state, checkpointfile)
 	if is_best:
-		checkpointfile = os.path.join(model_dir, network+ str(CViter) + '_model_best.pth.tar')	
-		torch.save(state, filename)
+		checkpointfile = os.path.join(args.model_dir, args.network)
+		checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
+		checkpointfile = os.path.join(checkpointfile, network+ str(CViter) + '_model_best.pth.tar')	
+		torch.save(state, checkpointfile)
 
 
-def resume_checkpoint(model_dir, network, start_epoch, best_loss, model, optimizer, CViter):
-	checkpointfile = os.path.join(model_dir, network+ str(CViter) + '.pth.tar')
+def resume_checkpoint(args, model, optimizer, CViter):
+	checkpointfile = os.path.join(args.model_dir, args.network)
+	checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
+	checkpointfile = os.path.join(checkpointfile, network+ str(CViter) + '.pth.tar')
 	if os.path.isfile(checkpointfile):
 		#logging.warning("=> loaded checkpoint '{}' (epoch {})".format(checkpointfile, checkpoint['epoch']))
 		logging.info("Loading checkpoint {}".format(checkpointfile))
@@ -137,4 +146,4 @@ def resume_checkpoint(model_dir, network, start_epoch, best_loss, model, optimiz
 		return start_epoch, best_loss, model, optimizer
 	else:
 		logging.warning("=> no checkpoint found at '{}'".format(checkpointfile))
-		return 0, +inf, model, optimizer
+		return 0, float('Inf'), model, optimizer

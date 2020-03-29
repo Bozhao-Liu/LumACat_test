@@ -2,13 +2,13 @@ import torch.nn as nn
 
 
 class Base_Model(nn.Module):
-	def __init__(self, channels):
+	def __init__(self, channels, dropout_rate):
 		"""
 		Args:
 		    params: (Params) contains num_channels
 		"""
 		super(Base_Model, self).__init__()
-		self.fc = nn.Linear(channels, channels) 
+		self.fc = nn.Sequential(nn.Dropout(dropout_rate), nn.Linear(363791, channels), nn.Sigmoid())
 
 	def forward(self, x):
 		"""
@@ -22,8 +22,5 @@ class Base_Model(nn.Module):
 
 		Note: the dimensions after each step are provided
 		"""
-		x = self.fc(x)
-		x = nn.sigmoid(x)
-
-		return x
+		return self.fc(x)
 

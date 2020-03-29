@@ -1,3 +1,4 @@
+import torch
 class AverageMeter(object):
     """Computes and stores the average and current value"""
     def __init__(self):
@@ -32,5 +33,8 @@ def Exp_UEW_BCE_loss(outputs, labels, weights = (1, 1)):
     loss = [torch.sum(torch.add(weights[0]*torch.exp(-torch.mul(labels[:, i],torch.log(outputs[:, i])))-1, -weights[1]*torch.mul(1 - labels[:, i],torch.log(1 - outputs[:, i])))) for i in range(outputs.shape[1])]
     return torch.stack(loss, dim=0).sum(dim=0).sum(dim=0)
 
-def save_AUC(params, model_dir, network, CViter, data, label):
-    return 0
+def save_AUC(args, CViter, model, dataloader):
+	AUC_png_file = os.path.join(args.model_dir, args.network)
+	AUC_png_file = os.path.join(AUC_png_file, 'AUC')
+	AUC_png_file = os.path.join(AUC_png_file, network+ str(CViter) + '.PNG')
+

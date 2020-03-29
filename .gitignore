@@ -3,5 +3,8 @@
 *.tsv
 *.bed
 *.pyc
-*.pyc
+*.log
+*.tar
 __pychage__
+
+

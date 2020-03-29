@@ -26,14 +26,14 @@ class CancerDatasetWrapper:
 			label_sample_list = list(self.labels['sample'])
 
 			self.features = pd.read_csv("TCGA-BRCA.methylation450.tsv",delimiter='\t',encoding='utf-8') 
-			self.feautres = self.features.dropna().reset_index(drop=True)
-			self.feautres = self.feautres.drop([list(self.feautres.columns.values)[0]], axis=1)
+			self.features = self.features.dropna().reset_index(drop=True)
+			self.features = self.features.drop([list(self.features.columns.values)[0]], axis=1)
 
-			feature_sample_list = list(self.feautres.columns.values)
+			feature_sample_list = list(self.features.columns.values)
 			samples = list(set(label_sample_list) & set(feature_sample_list))
 			
 			#only keep LumA samples to limit the memory usage
-			self.feautres = self.feautres[samples]
+			self.features = self.features[samples]
 			self.labels = self.labels[self.labels['sample'].isin(samples)]
 
 			self.shuffle()
@@ -95,7 +95,7 @@ class CancerDatasetWrapper:
 		Returns:
 			features in list	
 		"""
-		return CancerDatasetWrapper.instance.features[key]
+		return np.array(list(CancerDatasetWrapper.instance.features[key]))
 
 	def label(self, key):
 		"""
@@ -104,7 +104,7 @@ class CancerDatasetWrapper:
 		Returns:
 			label to the life and death of patient
 		"""
-		return CancerDatasetWrapper.instance.label(key)
+		return np.array(list(CancerDatasetWrapper.instance.label(key)))
 
 	def next(self):
 		CancerDatasetWrapper.instance.next()
@@ -192,7 +192,7 @@ class CancerDataset(Dataset):
 		    label: (int) corresponding label of sample
 		"""
 		sample = self.samples[idx]
-		return Tensor(self.DatasetWrapper.feature(sample)), self.DatasetWrapper.label(sample)
+		return Tensor(self.DatasetWrapper.features(sample)), self.DatasetWrapper.label(sample)
 
 
 def fetch_dataloader(types, params):
