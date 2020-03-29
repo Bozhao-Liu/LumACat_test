@@ -140,10 +140,10 @@ def resume_checkpoint(args, model, optimizer, CViter):
 		logging.info("Loading checkpoint {}".format(checkpointfile))
 		checkpoint = torch.load(checkpointfile)
 		start_epoch = checkpoint['epoch']
-		best_loss = checkpoint['best_loss']
+		best_AUC = checkpoint['best_AUC']
 		model.load_state_dict(checkpoint['state_dict'])
 		optimizer.load_state_dict(checkpoint['optimizer'])
-		return start_epoch, best_loss, model, optimizer
+		return start_epoch, best_AUC, model, optimizer
 	else:
 		logging.warning("=> no checkpoint found at '{}'".format(checkpointfile))
-		return 0, float('Inf'), model, optimizer
+		return 0, 0, model, optimizer

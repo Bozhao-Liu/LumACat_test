@@ -27,9 +27,9 @@ parser.add_argument('--log', default='warning', type=str,
 
 def train_model(args, params, loss_fn, model, optimizer, CViter):
 	start_epoch = 0
-	best_loss = float('Inf')
+	best_AUC = 0
 	if args.resume:
-		start_epoch, best_loss, model, optimizer = resume_checkpoint(args, model, optimizer, CViter)
+		start_epoch, best_AUC, model, optimizer = resume_checkpoint(args, model, optimizer, CViter)
 	logging.info("fetch_dataloader")
 	dataloaders = fetch_dataloader(['train', 'val'], params) 
 
@@ -37,19 +37,20 @@ def train_model(args, params, loss_fn, model, optimizer, CViter):
 		logging.info(' Training Epoch: [{0}]'.format(epoch))
 		train(dataloaders['train'], model, loss_fn, optimizer, epoch)
 		# evaluate on validation set
-		val_loss = validate(dataloaders['val'], model, loss_fn)
-		logging.warning('Loss {loss:.4f}\n'.format(loss=val_loss))
+		val_loss, AUC = get_AUC(validate(dataloaders['val'], model, loss_fn))
+		logging.warning('    Loss {loss:.4f}\n'.format(loss=val_loss))
+		logging.warning('    AUC {AUC:.4f}\n'.format(AUC=AUC))
 		# remember best loss and save checkpoint
-		is_best = val_loss < best_loss
-		best_loss = min(val_loss, best_loss)
+		is_best = best_AUC < AUC
+		best_AUC = min(best_AUC, AUC)
 		save_checkpoint({
 			'epoch': epoch + 1,
 			'state_dict': model.state_dict(),
-			'best_loss': best_loss,
+			'best_AUC': best_AUC,
 			'optimizer' : optimizer.state_dict(),
 			}, is_best, args, CViter)
 		if is_best:
-			save_AUC(args, CViter, model, dataloaders['val'])
+			save_ROC(args, CViter, validate(dataloaders['val'], model, loss_fn)[1])
 
 	get_next_CV_set()
 
@@ -94,6 +95,7 @@ def validate(val_loader, model, loss_fn):
 	logging.info("Validating")
 	logging.info("Initializing measurement")
 	losses = AverageMeter()
+	outputs = []
 
 	# switch to evaluate mode
 	model.eval()
@@ -108,12 +110,13 @@ def validate(val_loader, model, loss_fn):
 		# compute output
 		logging.info("        Compute output")
 		output = model(input_var).double()
-		cost = loss_fn(output, label_var, (1, 1))
-		assert not isnan(cost.cpu().data.numpy()),  "Overshot loss, Loss = {}".format(cost.cpu().data.numpy())
+		outputs.append((output, label_var))
+		loss = loss_fn(output, label_var, (1, 1))
+		assert not isnan(loss.cpu().data.numpy()),  "Overshot loss, Loss = {}".format(loss.cpu().data.numpy())
 		# measure record cost
-		losses.update(cost.cpu().data.numpy(), len(datas))
-
-	return losses.sum
+		losses.update(loss.cpu().data.numpy(), len(datas))
+	
+	return losses.sum, outputs
 
 
 def main():
@@ -146,7 +149,7 @@ def main():
 			if loss < best_loss:
 				best_model = model
 
-		validate(fetch_dataloader([], params) , best_model, loss_fn) #validate model on the full dataset
+		ave_ROC(args, CViter, validate(fetch_dataloader([], params) , best_model, loss_fn), True) #validate model on the full dataset, display ROC curve
 
 		
 
