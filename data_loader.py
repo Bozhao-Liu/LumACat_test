@@ -84,7 +84,8 @@ class CancerDatasetWrapper:
 	def __init__(self, cv_iters, shuffle = 0):
 		if not CancerDatasetWrapper.instance:
 			CancerDatasetWrapper.instance = CancerDatasetWrapper.__CancerDatasetWrapper(cv_iters)
-		elif shuffle:
+
+		if shuffle:
 			CancerDatasetWrapper.instance.shuffle()
 
 	def __getattr__(self, name):

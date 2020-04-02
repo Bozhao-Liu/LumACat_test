@@ -40,12 +40,8 @@ def Exp_UEW_BCE_loss(outputs, labels, weights = (1, 1)):
 	loss = [torch.sum(torch.add(weights[0]*torch.exp(-torch.mul(labels[:, i],torch.log(outputs[:, i])))-1, -weights[1]*torch.mul(1 - labels[:, i],torch.log(1 - outputs[:, i])))) for i in range(outputs.shape[1])]
 	return torch.stack(loss, dim=0).sum(dim=0).sum(dim=0)
 
-def save_ROC(args, CViter, outputs, display = False):
-	AUC_png_file = os.path.join(args.model_dir, args.network)
-	AUC_png_file = os.path.join(AUC_png_file, 'AUC')
-	if not os.path.isdir(AUC_png_file):
-		os.mkdir(AUC_png_file)
-	AUC_png_file = os.path.join(AUC_png_file, args.network+ str(CViter) + '.PNG')
+def save_ROC(args, dataset_name, outputs):
+	ROC_png_file = args.network+ '_CV_' + str(dataset_name) + '_ROC.PNG'
 	AUC = 0
 	TP_rates = []
 	FP_rates = []
@@ -66,17 +62,20 @@ def save_ROC(args, CViter, outputs, display = False):
 		FP_rate_pre = FP_rate
 		TP_rate_pre = TP_rate
 		
-	plt.clf()
 	plt.plot(FP_rates,TP_rates)
+	
 	plt.ylabel('True Positive Rate')
 	plt.xlabel('False Positive Rate')
-	plt.title('{} ROC on validation set NO.{}, AUC: {}'.format(args.network, CViter, AUC))
-	if display:
-		logging.warning('    Displaying ROC \n')
-		plt.show()
-	else:
-		logging.warning('    Saving ROC plot to {}\n'.format(AUC_png_file))
-		plt.savefig(AUC_png_file)
+	plt.title('{} ROC on validation set NO.{}'.format(args.network, dataset_name))
+	logging.warning('    Saving ROC plot to {}\n'.format(ROC_png_file))
+	plt.savefig(ROC_png_file)
+	return AUC
+
+def add_AUC_to_ROC(args, dataset_name, AUCs):
+	ROC_png_file = args.network+ '_CV_' + str(dataset_name) + '_ROC.PNG'
+	logging.warning('    adding AUC to ROC {}\n'.format(ROC_png_file))
+	plt.boxplot([AUCs], showfliers=False)
+	plt.savefig(ROC_png_file)
 
 def get_AUC(output):
 	outputs = output[1] #outputs[0] as predicted probs, outputs[1] as labels
@@ -96,4 +95,28 @@ def get_AUC(output):
 		TP_rate_pre = TP_rate
 	return output[0], AUC
 
+def plot_AUD_SD(AUCs, netlist, model_dir, train):
+	logging.warning('Creating AUC standard diviation image for {} \n'.format('-'.join(netlist)))
+	if train:
+		AUC_png_file = 'Crossvalidation_AUC.PNG'
+	else:
+		AUC_png_file = 'Fulldataset_AUC.PNG'
+
+	if len(netlist) == 1:
+		return
+
+	x = np.array(range(len(netlist)))+1
+	plt.clf()
+	fig = plt.figure()
+	ax = fig.add_subplot(111)
+	data = []
+	for i in x-1:
+		data.append(np.array(AUCs[netlist[i]]))
+
+	ax.boxplot(data, showfliers=False)
+	ax.set_ylabel('AUC')
+	ax.set_xlabel('Network name')
+	ax.set_title('AUC figure with standard diviation of {}'.format('-'.join(netlist)))
+	ax.set_xticklabels(netlist, fontsize=10)
+	plt.savefig(AUC_png_file)
 
