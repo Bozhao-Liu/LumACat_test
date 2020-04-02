@@ -1,16 +1,20 @@
 import torch.nn as nn
 
 
-class FC_1H(nn.Module):
+class FC_3H(nn.Module):
 	def __init__(self, channels, dropout_rate):
 		"""
 		Args:
 		    params: (Params) contains num_channels
 		"""
-		super(FC_1H, self).__init__()
+		super(FC_3H, self).__init__()
 		self.fc = nn.Sequential(
 			nn.Dropout(dropout_rate), 
 			nn.Linear(363791, 1024),
+			nn.Dropout(dropout_rate),
+			nn.Linear(1024, 1024),
+			nn.Dropout(dropout_rate),
+			nn.Linear(1024, 1024),
 			nn.Dropout(dropout_rate),
 			nn.Linear(1024, channels),
 			nn.Sigmoid())

@@ -1,16 +1,18 @@
-import os
 import argparse
-from tqdm import tqdm
+
 from numpy import isnan
 import torch
-import time
 import logging
 import gc
 
+
+from collections import defaultdict
 import torch.backends.cudnn as cudnn
 from Evaluation_Matix import *
 from utils import *
+import model_loader
 from data_loader import fetch_dataloader, get_next_CV_set
+import matplotlib.pyplot as plt
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -28,15 +30,17 @@ parser.add_argument('--model_dir', default='Model',
 			help="Directory containing params.json")
 parser.add_argument('--resume', default = True, type=str2bool, 
 			help='path to latest checkpoint (default: True)')
-parser.add_argument('--network', type=str, default='basemodel', 
-			help='select network to train on.')
+parser.add_argument('--network', type=str, default = '',
+			help='select network to train on. leave it blank means train on all model')
 parser.add_argument('--log', default='warning', type=str,
 			help='set logging level')
 
 
-def train_model(args, params, loss_fn, model, optimizer, CViter):
+def train_model(args, params, loss_fn, model, CViter):
 	start_epoch = 0
 	best_AUC = 0
+	# define optimizer		
+	optimizer = torch.optim.Adam(model.parameters(), params.learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=params.weight_decay, amsgrad=False)
 
 	if args.resume:
 		logging.info('Resuming Check point: {}'.format(args.resume))
@@ -53,17 +57,19 @@ def train_model(args, params, loss_fn, model, optimizer, CViter):
 		val_loss, AUC = get_AUC(validate(dataloaders['val'], model, loss_fn))
 		logging.warning('    Loss {loss:.4f};  AUC {AUC:.4f}\n'.format(loss=val_loss, AUC=AUC))
 
-		# remember best loss and save checkpoint
-		is_best = best_AUC < AUC
+		# remember best loss and save checkpoint		
+		if best_AUC < AUC:
+			logging.warning('    Saving Best AUC model\n')
+			save_checkpoint({
+				'epoch': epoch + 1,
+				'state_dict': model.state_dict(),
+				'best_AUC': AUC,
+				'optimizer' : optimizer.state_dict(),
+				}, args, CViter)
 		best_AUC = max(best_AUC, AUC)
-		save_checkpoint({
-			'epoch': epoch + 1,
-			'state_dict': model.state_dict(),
-			'best_AUC': best_AUC,
-			'optimizer' : optimizer.state_dict(),
-			}, is_best, args, CViter)
-	_, _, model, _ = resume_checkpoint(args, model, optimizer, CViter, '_model_best')
-	save_ROC(args, CViter, validate(dataloaders['val'], model, loss_fn)[1])
+	gc.collect()
+	del optimizer
+	return dataloaders['val']
 
 	
 
@@ -73,11 +79,9 @@ def train(train_loader, model, loss_fn, optimizer, epoch):
 	# switch to train mode
 	model.train()
 
-	end = time.time()
-	
+	from tqdm import tqdm
 	with tqdm(total=len(train_loader)) as t:
 		for i, (datas, label) in enumerate(train_loader):
-			# measure data loading time
 			logging.info("    Sample {}:".format(i))
 
 			logging.info("        Loading Varable")
@@ -99,7 +103,7 @@ def train(train_loader, model, loss_fn, optimizer, epoch):
 			optimizer.zero_grad()
 			cost.backward()
 			optimizer.step()
-
+		
 			gc.collect()
 			t.set_postfix(loss='{:05.3f}'.format(losses()))
 			t.update()
@@ -113,7 +117,6 @@ def validate(val_loader, model, loss_fn):
 	# switch to evaluate mode
 	model.eval()
 
-	end = time.time()
 	for i, (datas, label) in enumerate(val_loader):
 		logging.info("    Sample {}:".format(i))
 		logging.info("        Loading Varable")
@@ -135,38 +138,49 @@ def validate(val_loader, model, loss_fn):
 
 def main():
 	args = parser.parse_args()
-	params = set_params(args.model_dir, args.network)
-
-	# Set the logger
-	set_logger(args.model_dir, args.network, args.log)
+	AUCs = defaultdict(list)
 	
-	# create model
-	import model_loader
-	model = model_loader.loadModel(args.network, params.dropout_rate)
-	model.cuda()
-
-	# define loss function and optimizer
+	# define loss function
 	loss_fn = UnevenWeightBCE_loss
-	optimizer = torch.optim.Adam(model.parameters(), params.learning_rate, betas=(0.9, 0.999), eps=1e-08, weight_decay=params.weight_decay, amsgrad=False)
-	cudnn.benchmark = True
+	netlist = model_loader.get_model_list(args.network)
+	for network in netlist:
+		plt.clf()
+		args.network = network
+		set_logger(args.model_dir, args.network, args.log)
 
-	if args.train:
-		for CViter in range(params.CV_iters):
-			logging.warning('Cross Validation on iteration {}'.format(CViter+1))			
-			train_model(args, params, loss_fn, model, optimizer, CViter)
-			get_next_CV_set(params.CV_iters)
-	else: 
-		best_AUC = 0
-		logging.info('ploting ROC on full dataset for {}'.format(args.network))
-		for CViter in range(params.CV_iters):
-			params.start_epoch, AUC, model, optimizer = resume_checkpoint(args, model, optimizer, CViter, '_model_best')
-			if best_AUC < AUC:
-				best_AUC = AUC
-				best_model = model
+		params = set_params(args.model_dir, args.network)
+		
+		model = model_loader.loadModel(args.network, params.dropout_rate)
+		model.cuda()
 
-		save_ROC(args, '_Full_dataset_', outputs= validate(fetch_dataloader([], params), best_model, loss_fn)[1], display = True) #validate model on the full dataset, display ROC curve
+		cudnn.benchmark = True
+
+		if args.train:
+			for CViter in range(params.CV_iters):
+				logging.warning('Cross Validation on iteration {}'.format(CViter+1))	
+				AUCs[network].append(save_ROC(	args, 
+								params.CV_iters, 
+								outputs = validate(	train_model(args, params, loss_fn, model, CViter), 
+											resume_model(args, model, CViter), 
+											loss_fn)[1]))
+				get_next_CV_set(params.CV_iters)
+				model.apply(model_loader.weight_reset)
+
+			#add the AUC SD to the current model result
+			add_AUC_to_ROC(args, params.CV_iters, AUCs[network])
+		else: 
+			logging.info('ploting ROC on full dataset for {}'.format(args.network))
+			for CViter in range(params.CV_iters):
+				AUCs[network].append(save_ROC(	args, 
+								'Full_dataset', 
+								outputs= validate(	fetch_dataloader([], params), 
+											resume_model(args, model, CViter), 
+											loss_fn)[1])) #validate model on the full dataset, display ROC curve
+			#add the AUC SD to the current model result
+			add_AUC_to_ROC(args, 'Full_dataset', AUCs[network])
+	
+	plot_AUD_SD(AUCs, netlist, args.model_dir, args.train)
 
 		
-
 if __name__ == '__main__':
 	main()

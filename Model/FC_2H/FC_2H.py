@@ -10,11 +10,11 @@ class FC_2H(nn.Module):
 		super(FC_2H, self).__init__()
 		self.fc = nn.Sequential(
 			nn.Dropout(dropout_rate), 
-			nn.Linear(363791, 800),
+			nn.Linear(363791, 1024),
 			nn.Dropout(dropout_rate),
-			nn.Linear(800, 800),
+			nn.Linear(1024, 1024),
 			nn.Dropout(dropout_rate),
-			nn.Linear(800, channels),
+			nn.Linear(1024, channels),
 			nn.Sigmoid())
 
 	def forward(self, x):

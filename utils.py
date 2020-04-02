@@ -119,24 +119,19 @@ def save_dict_to_json(d, json_path):
         json.dump(d, f, indent=4)
 
 
-def save_checkpoint(state, is_best, args, CViter):
+def save_checkpoint(state, args, CViter):
 	checkpointfile = os.path.join(args.model_dir, args.network)
 	checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
 	if not os.path.isdir(checkpointfile):
 		os.mkdir(checkpointfile)
 	checkpointfile = os.path.join(checkpointfile, args.network+ str(CViter) + '.pth.tar')
 	torch.save(state, checkpointfile)
-	if is_best:
-		checkpointfile = os.path.join(args.model_dir, args.network)
-		checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
-		checkpointfile = os.path.join(checkpointfile, args.network+ str(CViter) + '_model_best.pth.tar')	
-		torch.save(state, checkpointfile)
 
 
-def resume_checkpoint(args, model, optimizer, CViter, best = ''):
+def resume_checkpoint(args, model, optimizer, CViter):
 	checkpointfile = os.path.join(args.model_dir, args.network)
 	checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
-	checkpointfile = os.path.join(checkpointfile, args.network+ str(CViter) + best + '.pth.tar')
+	checkpointfile = os.path.join(checkpointfile, args.network+ str(CViter) + '.pth.tar')
 	assert os.path.isfile(checkpointfile), "=> no checkpoint found at '{}'".format(checkpointfile)
 
 	logging.info("Loading checkpoint {}".format(checkpointfile))
@@ -146,3 +141,13 @@ def resume_checkpoint(args, model, optimizer, CViter, best = ''):
 	model.load_state_dict(checkpoint['state_dict'])
 	optimizer.load_state_dict(checkpoint['optimizer'])
 	return start_epoch, best_AUC, model, optimizer
+
+def resume_model(args, model, CViter):
+	checkpointfile = os.path.join(args.model_dir, args.network)
+	checkpointfile = os.path.join(checkpointfile, 'Checkpoints')
+	checkpointfile = os.path.join(checkpointfile, args.network+ str(CViter) + '.pth.tar')
+	assert os.path.isfile(checkpointfile), "=> no checkpoint found at '{}'".format(checkpointfile)
+
+	logging.info("Loading model {}".format(checkpointfile))
+	model.load_state_dict(torch.load(checkpointfile)['state_dict'])
+	return model
